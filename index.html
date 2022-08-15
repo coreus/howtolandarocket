@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <script src="vector.js"></script>
+        <script src="agent.js"></script>
+        <script src="body.js"></script>
+        <script src="rocket.js"></script>
+        <script src="engine.js"></script>
+        <script src="planet.js"></script>
+        <script src="game.js"></script>
+        <script src="landing.js"></script>
+        <script src="https://d3js.org/d3.v7.min.js"></script>
+
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"> </script>
+        
+        <style>
+            body { font: 12px Arial;}
+
+            path { 
+                stroke: steelblue;
+                stroke-width: 2;
+                fill: none;
+            }
+
+            .axis path,
+            .axis line {
+                fill: none;
+                stroke: grey;
+                stroke-width: 1;
+                shape-rendering: crispEdges;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="telemetry"></div>
+        <div id="landing"></div>
+        
+    </body>
+    <script>
+        (async function(){
+        var margin = {top: 30, right: 40, bottom: 30, left: 50},
+        width = 1200 - margin.left - margin.right,
+        height = 600 - margin.top - margin.bottom;
+        
+        var step = 1; // (time in s)
+        let games = 0;
+        let epsilon = 0.9;
+
+        var earth = new Earth();
+        
+        
+        //define ship
+        var starship = new Rocket(4.5,50,85000,5000);
+        var raptor2 = new Engine(360,245000);
+        
+        //add 3 raptors
+        starship.addEngine(raptor2);
+        starship.addEngine(raptor2);
+        starship.addEngine(raptor2);
+
+        starship.setPosition(0,80000);
+        starship.setSpeed(6000,-100);
+        //starship.setAngle(90);
+
+        let landing = new Landing(earth,starship,step);
+        var telemetry = [];
+        var position = [];
+
+        let agent = new Agent(256,0.7);
+        let action;
+        var possibleActions = landing.getPossibleActions();
+        var trainStep = 0;
+        var trainLock = true;
+        var reward = 0;
+        console.log("start");
+        //while(trainStep<10){
+            console.log('trainstep:',trainStep);
+            while(games<10){
+                state = landing.getState();
+                
+                //select action
+                if(Math.random()>epsilon)
+                {
+                    action = possibleActions[agent.infer(state)];
+                }
+                else
+                {
+                    action = possibleActions[Math.floor(possibleActions.length * Math.random())];
+                }
+
+                //play
+                //console.log('action',action);
+                reward += landing.play(action);
+                newState = landing.getState();
+                agent.pushToMemory(state,action,reward,newState,landing.isOver());
+                console.log(reward);
+                console.log(landing.getRawState());
+                if(landing.isOver())
+                {
+                    console.log('reward : ', reward);
+                    landing.reset();
+                    reward = 0;
+                    games++;
+                }
+            }
+            
+            await agent.train();
+            epsilon -= 0.05;
+            trainStep++;
+            console.log("trained!");
+            
+
+            
+            //trainStep++;
+            /*
+            if(trainLock)
+            {
+                trainLock = false;
+                .then(res=>{
+                trainLock = true;
+                console.log("trained!");
+                epsilon -= 0.05;
+                trainStep++;});
+            }
+            */
+            
+        //}
+        
+        landing.reset();
+        
+        while(landing.body.getTelemetry().position.y>0)
+        {
+            action = possibleActions[agent.infer(landing.getState())];
+            console.log(action,landing.getRawState());
+            landing.play(action);
+            telemetry.push({'time':landing.time,'speed':starship.getTelemetry().speed.getLength(),'position':starship.getTelemetry().position.y});
+            position.push({'time':landing.time,'x':starship.getTelemetry().position.x,'y':starship.getTelemetry().position.y});
+        }
+        console.log(position);
+        
+        var x = d3.scaleLinear().range([0,width]);
+        var y0 = d3.scaleLinear().range([height,0]);
+        var y1 = d3.scaleLinear().range([height,0]);
+        
+        var valueline = d3.line()
+            .x(function(d) { return x(d.time); })
+            .y(function(d) { return y0(d.position); });
+            
+        var valueline2 = d3.line()
+            .x(function(d) { return x(d.time); })
+            .y(function(d) { return y1(Math.abs(d.speed)); });
+        var xAxis = d3.axisBottom(x).ticks(5);
+        var yAxisLeft = d3.axisLeft(y0).ticks(5);
+        var yAxisRight = d3.axisRight(y1).ticks(5); 
+
+
+        var telemetryGraph = d3.select("#telemetry")
+            .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+            .append("g")
+                .attr("transform", 
+                    "translate(" + margin.left + "," + margin.top + ")");
+
+        x.domain(d3.extent(telemetry, function(d) { return d.time; }));
+        y0.domain([0, d3.max(telemetry, function(d) {
+            return Math.max(d.position); })]); 
+        y1.domain([0, d3.max(telemetry, function(d) { 
+            return Math.max(Math.abs(d.speed)); })]);
+        
+        telemetryGraph.append("path")        // Add the valueline path.
+            .attr("d", valueline(telemetry));
+
+        telemetryGraph.append("path")        // Add the valueline2 path.
+            .style("stroke", "red")
+            .attr("d", valueline2(telemetry));
+
+        telemetryGraph.append("g")            // Add the X Axis
+            .attr("class", "x axis")
+            .attr("transform", "translate(0," + height + ")")
+            .call(xAxis);
+
+        telemetryGraph.append("g")
+            .attr("class", "y axis")
+            .style("fill", "steelblue")
+            .call(yAxisLeft);	
+
+        telemetryGraph.append("g")				
+            .attr("class", "y axis")	
+            .attr("transform", "translate(" + width + " ,0)")	
+            .style("fill", "red")		
+            .call(yAxisRight);
+       
+        var landingGraph = d3.select("#landing")
+            .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+            .append("g")
+                .attr("transform", 
+                    "translate(" + margin.left + "," + margin.top + ")");
+        
+        x = d3.scaleLinear().range([0,width]);
+        var y = d3.scaleLinear().range([height,0]);
+
+        xAxis = d3.axisBottom(x).ticks(5);
+        yAxisLeft = d3.axisLeft(y).ticks(5);
+        
+        x.domain([0, d3.max(position, function(d) {
+            return Math.max(d.x); })]); 
+        y.domain([0, d3.max(position, function(d) {
+            return Math.max(d.y); })]); 
+        
+        var valueline = d3.line()
+            .x(function(d) { return x(d.x); })
+            .y(function(d) { return y(d.y); });
+        landingGraph.append("path")        // Add the valueline path.
+            .style("stroke", "green")
+            .attr("d", valueline(position));
+
+        
+
+        landingGraph.append("g")            // Add the X Axis
+            .attr("class", "x axis")
+            .attr("transform", "translate(0," + height + ")")
+            .call(xAxis);
+
+        landingGraph.append("g")
+            .attr("class", "y axis")
+            .style("fill", "steelblue")
+            .call(yAxisLeft);	
+    })();
+    </script>
+</html>
