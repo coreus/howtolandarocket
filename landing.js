@@ -100,23 +100,26 @@ class Landing extends Game
         //vertical reduction
         if(Math.pow(nextState[2],2)+Math.pow(nextState[3],2)<Math.pow(state[2],2)+Math.pow(state[3],2))
         {
-            reward++;
+            reward+=10;
         }
         else{
-            reward--;
+            reward-=5;
         }
         if(nextState[4]<state[4])
         {
-            reward-=0.5;
+            reward-=5;
         }
-        if(this.isWon())
-        {
-            reward+=100;
+        if(this.isOver()){
+            if(this.isWon())
+            {
+                reward+=1000;
+            }
+            else{
+                reward-=1000;
+            }
         }
-        else
-        {
-            reward-=100;
-        }
+        
+        
         super.play(action);
         return reward;
     }

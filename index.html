@@ -59,7 +59,7 @@
         starship.addEngine(raptor2);
 
         starship.setPosition(0,80000);
-        starship.setSpeed(6000,-100);
+        starship.setSpeed(1000,-100);
         //starship.setAngle(90);
 
         let landing = new Landing(earth,starship,step);
@@ -73,7 +73,8 @@
         var trainLock = true;
         var reward = 0;
         console.log("start");
-        //while(trainStep<10){
+        
+        while(trainStep<10){
             console.log('trainstep:',trainStep);
             while(games<10){
                 state = landing.getState();
@@ -89,7 +90,11 @@
                 }
 
                 //play
-                //console.log('action',action);
+                console.log('action',action);
+                if(action == undefined)
+                {
+                    action = 'NONE';
+                }
                 reward += landing.play(action);
                 newState = landing.getState();
                 agent.pushToMemory(state,action,reward,newState,landing.isOver());
@@ -107,6 +112,7 @@
             await agent.train();
             epsilon -= 0.05;
             trainStep++;
+            games=0;
             console.log("trained!");
             
 
@@ -124,7 +130,7 @@
             }
             */
             
-        //}
+        }
         
         landing.reset();
         

@@ -69,7 +69,7 @@ class Rocket extends Body
         this.throttleRate += rate;
         if(this.throttleRate>100) this.throttleRate = 100;
         if(this.throttleRate<0) this.throttleRate = 0;
-        if(this.propellantMass == 0)
+        if(this.propellantMass <= 0)
         {
             this.throttleRate = 0;
         }
@@ -91,6 +91,10 @@ class Rocket extends Body
     updatePropellantMass(step)
     {
         this.propellantMass -= this.getCurrentComsuption() * step;
+        if(this.propellantMass<0)
+        {
+            this.propellantMass = 0;
+        }
         this.setMass(this.dryMass + this.propellantMass);
     }
     setPropellantMass(mass)

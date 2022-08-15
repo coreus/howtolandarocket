@@ -23,6 +23,7 @@ class Agent
     infer(state)
     {
         var output  = this.model.predict(tf.tensor1d(state).reshape([1,7])).arraySync().flat();
+        console.log('prediction:',output);
         return output.indexOf(Math.max(...output));
     }
 
@@ -35,6 +36,7 @@ class Agent
 
     async train()
     {
+        console.log('train');
         var minibatch = this.replayMemory
         .map(value => ({ value, sort: Math.random() }))
         .sort((a, b) => a.sort - b.sort)
@@ -58,13 +60,16 @@ class Agent
         
         x = tf.concat1d(x).reshape([this.batchSize, 7]);
         y = tf.concat1d(y).reshape([this.batchSize, 5]);
-        this.model.fit(x,y, {
-            epochs: 1,
+        console.log(x.arraySync(),y.arraySync());
+        await this.model.fit(x,y, {
+            epochs: 5,
             callbacks:{
               onEpochEnd: async(epoch, logs) =>{
                   console.log("Epoch:" + epoch + " Loss:" + logs.loss);
               }
             }
-          });
+        });
+        this.model.getWeights()[0].print();
+
     }
 }
