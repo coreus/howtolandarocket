@@ -15,6 +15,12 @@ class Landing extends Game
         Landing.UP_ARROW = 38;
         Landing.DOWN_ARROW = 40;
         Landing.NONE = 0;
+
+        this.currentAtmoDensity = this.planet.getAtmosphereDensity(this.body.position.y);
+        this.currentDragCoef = this.body.getDragCoefficient();
+        this.currentCrossSection = this.body.getCrossSectionalArea();
+        this.currentSpeed = this.body.speed.getLength();
+
         this.saveInitialState();
     }
 
@@ -35,9 +41,15 @@ class Landing extends Game
     //return (N == kg.m/s²)
     calculateBodyForceVector()
     {
-        var drag = 0.5 * this.planet.getAtmosphereDensity(this.body.position.y) * this.body.getDragCoefficient() * this.body.getCrossSectionalArea() * Math.pow(this.body.speed.getLength(),2);
+        this.currentAtmoDensity = this.planet.getAtmosphereDensity(this.body.position.y);
+        this.currentDragCoef = this.body.getDragCoefficient();
+        this.currentCrossSection = this.body.getCrossSectionalArea();
+        this.currentSpeed = this.body.speed.getLength();
+        var drag = 0.5 * this.currentAtmoDensity * this.currentDragCoef * this.currentCrossSection * Math.pow(this.currentSpeed,2);
+        //console.log('drag',this.body.getDragCoefficient(),this.planet.getAtmosphereDensity(this.body.position.y),this.body.getCrossSectionalArea(),this.body.pitchAngle,drag);
         var y = drag * Math.sin( - this.body.speed.getAngle() * Math.PI / 180 ) + this.body.getGeneratedForce() * Math.sin( (- this.body.speed.getAngle() + this.body.pitchAngle) * Math.PI / 180 ) - this.body.mass * this.planet.getGravitationalAcceleration(this.body.position.y);
         var x = - Math.round(drag * Math.cos( this.body.speed.getAngle() * Math.PI / 180 )* 10000 ) / 10000 - Math.round(this.body.getGeneratedForce() * Math.cos( (this.body.speed.getAngle() + this.body.pitchAngle) * Math.PI / 180 )* 10000 ) / 10000;
+        
         // https://publications.lib.chalmers.se/records/fulltext/199998/199998.pdf
         return new Vector(x,y);
     }
@@ -45,6 +57,7 @@ class Landing extends Game
     calculateBodyAcceleration()
     {
         var force = this.calculateBodyForceVector();
+        //console.log(force);
         this.body.setAcceleration(force.x/this.body.mass,force.y/this.body.mass);
     }
     simulate()
@@ -63,6 +76,11 @@ class Landing extends Game
         this.body.setPropellantMass(this.initialBodyState['propellant']);
         this.body.pitchAngle = this.initialBodyState['pitch'];
         this.body.throttleRate = this.initialBodyState['throttle'];
+        this.currentAtmoDensity = this.planet.getAtmosphereDensity(this.body.position.y);
+        this.currentDragCoef = this.body.getDragCoefficient();
+        this.currentCrossSection = this.body.getCrossSectionalArea();
+        this.currentSpeed = this.body.speed.getLength();
+        //console.log(this.currentAtmoDensity,this.currentDragCoef,this.currentCrossSection,this.currentSpeed);
         this.time=0;
     }
     isOver()
@@ -72,7 +90,7 @@ class Landing extends Game
     isWon()
     {
         var telemetry = this.body.getTelemetry();
-        return telemetry['speed'].y < 3 && telemetry['speed'].x < 1;
+        return Math.abs(telemetry['speed'].y) < 3 && Math.abs(telemetry['speed'].x) < 1;
     }
     play(action)
     {
@@ -98,24 +116,51 @@ class Landing extends Game
         var nextState = this.getRawState();
         var reward = 0;
         //vertical reduction
-        if(Math.pow(nextState[2],2)+Math.pow(nextState[3],2)<Math.pow(state[2],2)+Math.pow(state[3],2))
+        var speedDiff = Math.pow(nextState[2],2)+Math.pow(nextState[3],2)-Math.pow(state[2],2)-Math.pow(state[3],2);
+        
+        if(nextState[2] - state[2]>0)
         {
-            reward+=10;
+            reward -= 10;
+        }
+        reward += nextState[3] - state[3];
+        //reward = 1000/(1+((Math.pow(nextState[2],2)+Math.pow(nextState[3],2))));
+        //reward = Math.exp(1/(nextState[1]+1))/(1+this.currentSpeed);
+        //reward-=speedDiff;
+        //console.log('velocity reward',reward)
+        /*
+        if(speedDiff<0)
+        {
+            reward+=speedDiff;
         }
         else{
             reward-=5;
         }
-        if(nextState[4]<state[4])
+        */
+       
+        if(nextState[6]<state[6])
         {
-            reward-=5;
+            reward-=1;
         }
+        /*
+       if(this.body.propellantMass == 0)
+       {
+            reward-=4;
+       }
+       */
+       
         if(this.isOver()){
+            reward += 100 - Math.sqrt(Math.pow(state[2],2)+Math.pow(state[3],2));
+            if(state[8]==0)
+            {
+                reward+=50;
+            }
             if(this.isWon())
             {
                 reward+=1000;
+                console.log(state,this.body.getTelemetry()['position'].y);
             }
             else{
-                reward-=1000;
+                //reward-=1000;
             }
         }
         
@@ -126,10 +171,13 @@ class Landing extends Game
     getRawState()
     {
         var telemetry =  this.body.getTelemetry();
+        
         return [telemetry['position'].x
                 ,telemetry['position'].y
                 ,telemetry['speed'].x
                 ,telemetry['speed'].y
+                ,this.currentAtmoDensity
+                ,this.currentCrossSection
                 ,telemetry['propellantMass']
                 ,telemetry['throttleRate']
                 ,telemetry['pitchAngle']
@@ -138,10 +186,22 @@ class Landing extends Game
     getState()
     {
         var telemetry =  this.body.getTelemetry();
-        return [telemetry['position'].x / 500000
+        /*
+        return [telemetry['position'].x
+                ,telemetry['position'].y
+                ,telemetry['speed'].x
+                ,telemetry['speed'].y
+                ,telemetry['propellantMass']
+                ,telemetry['throttleRate']
+                ,telemetry['pitchAngle']
+            ];
+        */
+        return [telemetry['position'].x / 100000
                 ,telemetry['position'].y / 80000
                 ,telemetry['speed'].x / 10000
                 ,telemetry['speed'].y / 1000
+                ,this.currentAtmoDensity
+                ,this.currentCrossSection / 400
                 ,telemetry['propellantMass'] / 5000
                 ,telemetry['throttleRate'] / 100
                 ,telemetry['pitchAngle'] / 360

@@ -41,6 +41,10 @@ class Planet
         var minAltitude;
         var maxAltitude;
         altitude = Math.round(altitude);
+        if(altitude<0)
+            altitude = 0;
+        if(altitude>80000)
+            altitude = 80000;
         if(datas[altitude] != undefined)
         {
             return datas[altitude];

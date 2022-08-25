@@ -40,8 +40,10 @@ class Rocket extends Body
         if(this.pitchAngle == 90){
             return this.radius * 2 * this.height;
         }
+        //console.log(this.radius * 2 * this.height * Math.sin(this.radianPitchAngle));
+        return Math.abs(this.radius * 2 * this.height * Math.sin(this.radianPitchAngle));
         // https://www.quora.com/What-is-the-formula-for-calculating-the-cross-sectional-area-of-a-cylinder
-        return this.radius * this.radius * Math.sin(this.radianPitchAngle) * Math.PI
+        return Math.abs(this.radius * this.radius * Math.sin(this.radianPitchAngle) * Math.PI)
     }
     
     addEngine(engine)
@@ -52,8 +54,7 @@ class Rocket extends Body
     }
     pitch(angle)
     {
-        this.pitchAngle += angle;
-        this.pitchAngle = this.pitchAngle % 360;
+        this.setAngle(this.pitchAngle + angle);;
     }
 
     calcultateMaxThrust()

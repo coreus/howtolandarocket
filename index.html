@@ -44,10 +44,9 @@
         
         var step = 1; // (time in s)
         let games = 0;
-        let epsilon = 0.9;
+        let epsilon = 1;
 
         var earth = new Earth();
-        
         
         //define ship
         var starship = new Rocket(4.5,50,85000,5000);
@@ -63,177 +62,184 @@
         //starship.setAngle(90);
 
         let landing = new Landing(earth,starship,step);
-        var telemetry = [];
-        var position = [];
+        
 
-        let agent = new Agent(256,0.7);
+        let agent = new Agent(512,0,9,5);
         let action;
         var possibleActions = landing.getPossibleActions();
         var trainStep = 0;
         var trainLock = true;
-        var reward = 0;
+        var totalReward = 0;
+        
         console.log("start");
         
-        while(trainStep<10){
+        while(trainStep<1000){
             console.log('trainstep:',trainStep);
-            while(games<10){
+            while(games<5){
                 state = landing.getState();
                 
                 //select action
+                
                 if(Math.random()>epsilon)
                 {
+                    //console.log('infer');
                     action = possibleActions[agent.infer(state)];
                 }
                 else
                 {
+                    //console.log('random');
                     action = possibleActions[Math.floor(possibleActions.length * Math.random())];
                 }
 
                 //play
-                console.log('action',action);
+                //console.log('action',action);
                 if(action == undefined)
                 {
                     action = 'NONE';
                 }
-                reward += landing.play(action);
+                var reward = landing.play(action);
                 newState = landing.getState();
-                agent.pushToMemory(state,action,reward,newState,landing.isOver());
-                console.log(reward);
-                console.log(landing.getRawState());
+                agent.pushToMemory(state,possibleActions.indexOf(action),reward,newState,landing.isOver());
+                totalReward += reward;
+                //console.log(reward);
+                //console.log(landing.getRawState());
+                if(landing.getRawState()[0]<-50000)
+                    throw new Error('error');
                 if(landing.isOver())
                 {
-                    console.log('reward : ', reward);
+                    console.log('reward : ', totalReward);
                     landing.reset();
-                    reward = 0;
+                    totalReward = 0;
                     games++;
                 }
             }
             
             await agent.train();
-            epsilon -= 0.05;
+            epsilon *= 0.999;
+            console.log('epsilon',epsilon);
+            if(trainStep % 5 == 0)
+            agent.copyWeights();
             trainStep++;
             games=0;
             console.log("trained!");
-            
-
-            
-            //trainStep++;
-            /*
-            if(trainLock)
+            if(trainStep % 20 == 0)
             {
-                trainLock = false;
-                .then(res=>{
-                trainLock = true;
-                console.log("trained!");
-                epsilon -= 0.05;
-                trainStep++;});
+                display();
             }
-            */
             
         }
         
-        landing.reset();
+        function display(){
         
-        while(landing.body.getTelemetry().position.y>0)
-        {
-            action = possibleActions[agent.infer(landing.getState())];
-            console.log(action,landing.getRawState());
-            landing.play(action);
-            telemetry.push({'time':landing.time,'speed':starship.getTelemetry().speed.getLength(),'position':starship.getTelemetry().position.y});
-            position.push({'time':landing.time,'x':starship.getTelemetry().position.x,'y':starship.getTelemetry().position.y});
-        }
-        console.log(position);
-        
-        var x = d3.scaleLinear().range([0,width]);
-        var y0 = d3.scaleLinear().range([height,0]);
-        var y1 = d3.scaleLinear().range([height,0]);
-        
-        var valueline = d3.line()
-            .x(function(d) { return x(d.time); })
-            .y(function(d) { return y0(d.position); });
+            var telemetry = [];
+            var position = [];
+            var totalReward = 0;
+            landing.reset();
             
-        var valueline2 = d3.line()
-            .x(function(d) { return x(d.time); })
-            .y(function(d) { return y1(Math.abs(d.speed)); });
-        var xAxis = d3.axisBottom(x).ticks(5);
-        var yAxisLeft = d3.axisLeft(y0).ticks(5);
-        var yAxisRight = d3.axisRight(y1).ticks(5); 
+            while(landing.body.getTelemetry().position.y>0)
+            {
+                action = possibleActions[agent.infer(landing.getState())];
+                console.log(action,landing.getRawState());
+                reward = landing.play(action);
+                totalReward += reward;
+                console.log('reward',reward);
+                telemetry.push({'time':landing.time,'speed':starship.getTelemetry().speed.getLength(),'position':starship.getTelemetry().position.y});
+                position.push({'time':landing.time,'x':starship.getTelemetry().position.x,'y':starship.getTelemetry().position.y});
+            }
+            console.log(position);
+            console.log('final reward',totalReward);
+            var x = d3.scaleLinear().range([0,width]);
+            var y0 = d3.scaleLinear().range([height,0]);
+            var y1 = d3.scaleLinear().range([height,0]);
+            
+            var valueline = d3.line()
+                .x(function(d) { return x(d.time); })
+                .y(function(d) { return y0(d.position); });
+                
+            var valueline2 = d3.line()
+                .x(function(d) { return x(d.time); })
+                .y(function(d) { return y1(Math.abs(d.speed)); });
+            var xAxis = d3.axisBottom(x).ticks(5);
+            var yAxisLeft = d3.axisLeft(y0).ticks(5);
+            var yAxisRight = d3.axisRight(y1).ticks(5); 
 
 
-        var telemetryGraph = d3.select("#telemetry")
-            .append("svg")
-                .attr("width", width + margin.left + margin.right)
-                .attr("height", height + margin.top + margin.bottom)
-            .append("g")
-                .attr("transform", 
-                    "translate(" + margin.left + "," + margin.top + ")");
+            var telemetryGraph = d3.select("#telemetry")
+                .append("svg")
+                    .attr("width", width + margin.left + margin.right)
+                    .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                    .attr("transform", 
+                        "translate(" + margin.left + "," + margin.top + ")");
 
-        x.domain(d3.extent(telemetry, function(d) { return d.time; }));
-        y0.domain([0, d3.max(telemetry, function(d) {
-            return Math.max(d.position); })]); 
-        y1.domain([0, d3.max(telemetry, function(d) { 
-            return Math.max(Math.abs(d.speed)); })]);
+            x.domain(d3.extent(telemetry, function(d) { return d.time; }));
+            y0.domain([0, d3.max(telemetry, function(d) {
+                return Math.max(d.position); })]); 
+            y1.domain([0, d3.max(telemetry, function(d) { 
+                return Math.max(Math.abs(d.speed)); })]);
+            
+            telemetryGraph.append("path")        // Add the valueline path.
+                .attr("d", valueline(telemetry));
+
+            telemetryGraph.append("path")        // Add the valueline2 path.
+                .style("stroke", "red")
+                .attr("d", valueline2(telemetry));
+
+            telemetryGraph.append("g")            // Add the X Axis
+                .attr("class", "x axis")
+                .attr("transform", "translate(0," + height + ")")
+                .call(xAxis);
+
+            telemetryGraph.append("g")
+                .attr("class", "y axis")
+                .style("fill", "steelblue")
+                .call(yAxisLeft);	
+
+            telemetryGraph.append("g")				
+                .attr("class", "y axis")	
+                .attr("transform", "translate(" + width + " ,0)")	
+                .style("fill", "red")		
+                .call(yAxisRight);
         
-        telemetryGraph.append("path")        // Add the valueline path.
-            .attr("d", valueline(telemetry));
+            var landingGraph = d3.select("#landing")
+                .append("svg")
+                    .attr("width", width + margin.left + margin.right)
+                    .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                    .attr("transform", 
+                        "translate(" + margin.left + "," + margin.top + ")");
+            
+            x = d3.scaleLinear().range([0,width]);
+            var y = d3.scaleLinear().range([height,0]);
 
-        telemetryGraph.append("path")        // Add the valueline2 path.
-            .style("stroke", "red")
-            .attr("d", valueline2(telemetry));
+            xAxis = d3.axisBottom(x).ticks(5);
+            yAxisLeft = d3.axisLeft(y).ticks(5);
+            
+            x.domain([0, d3.max(position, function(d) {
+                return Math.max(d.x); })]); 
+            y.domain([0, d3.max(position, function(d) {
+                return Math.max(d.y); })]); 
+            
+            var valueline = d3.line()
+                .x(function(d) { return x(d.x); })
+                .y(function(d) { return y(d.y); });
+            landingGraph.append("path")        // Add the valueline path.
+                .style("stroke", "green")
+                .attr("d", valueline(position));
 
-        telemetryGraph.append("g")            // Add the X Axis
-            .attr("class", "x axis")
-            .attr("transform", "translate(0," + height + ")")
-            .call(xAxis);
+            
 
-        telemetryGraph.append("g")
-            .attr("class", "y axis")
-            .style("fill", "steelblue")
-            .call(yAxisLeft);	
+            landingGraph.append("g")            // Add the X Axis
+                .attr("class", "x axis")
+                .attr("transform", "translate(0," + height + ")")
+                .call(xAxis);
 
-        telemetryGraph.append("g")				
-            .attr("class", "y axis")	
-            .attr("transform", "translate(" + width + " ,0)")	
-            .style("fill", "red")		
-            .call(yAxisRight);
-       
-        var landingGraph = d3.select("#landing")
-            .append("svg")
-                .attr("width", width + margin.left + margin.right)
-                .attr("height", height + margin.top + margin.bottom)
-            .append("g")
-                .attr("transform", 
-                    "translate(" + margin.left + "," + margin.top + ")");
-        
-        x = d3.scaleLinear().range([0,width]);
-        var y = d3.scaleLinear().range([height,0]);
-
-        xAxis = d3.axisBottom(x).ticks(5);
-        yAxisLeft = d3.axisLeft(y).ticks(5);
-        
-        x.domain([0, d3.max(position, function(d) {
-            return Math.max(d.x); })]); 
-        y.domain([0, d3.max(position, function(d) {
-            return Math.max(d.y); })]); 
-        
-        var valueline = d3.line()
-            .x(function(d) { return x(d.x); })
-            .y(function(d) { return y(d.y); });
-        landingGraph.append("path")        // Add the valueline path.
-            .style("stroke", "green")
-            .attr("d", valueline(position));
-
-        
-
-        landingGraph.append("g")            // Add the X Axis
-            .attr("class", "x axis")
-            .attr("transform", "translate(0," + height + ")")
-            .call(xAxis);
-
-        landingGraph.append("g")
-            .attr("class", "y axis")
-            .style("fill", "steelblue")
-            .call(yAxisLeft);	
+            landingGraph.append("g")
+                .attr("class", "y axis")
+                .style("fill", "steelblue")
+                .call(yAxisLeft);
+            }
+        	
     })();
     </script>
 </html>

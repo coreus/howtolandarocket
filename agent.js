@@ -1,41 +1,74 @@
 class Agent
 {
-    constructor(batchSize,discountFactor){
+    constructor(batchSize,discountFactor,inputShape,outputShape){
 
         this.replayMemory = [];
-        this.initModel();
+        this.inputShape = inputShape;
+        this.outputShape = outputShape;
+        this.initModels();
         this.batchSize = batchSize;
         this.discountFactor = discountFactor;
+        
     }
 
-    initModel()
+    initModels()
     {
-        this.model = tf.sequential();
-        this.model.add(tf.layers.dense({ units: 5, batchInputShape: [null, 7], activation: 'softmax'}));
-        this.model.compile({
+        this.qModel = tf.sequential();
+        this.qModel.add(tf.layers.dense({ name:'Dense1', units:128, batchInputShape: [null, this.inputShape], activation: 'relu',kernelInitialize:tf.initializers.heUniform()}));
+        this.qModel.add(tf.layers.dense({ name:'Dense2', units:64, activation: 'relu',kernelInitialize:tf.initializers.heUniform()}));
+        this.qModel.add(tf.layers.dense({ name:'Dense3', units: this.outputShape, activation: 'linear',kernelInitialize:tf.initializers.heUniform()}));
+        this.qModel.compile({
             loss: 'meanSquaredError',
-            optimizer: 'sgd'
+            optimizer: 'sgd',
+            metrics: ['accuracy']
           });
-        this.model.summary();
+        this.qModel.summary();
         
+        
+        this.targetModel = tf.sequential();
+        this.targetModel.add(tf.layers.dense({ name:'Dense1', units:128, batchInputShape: [null, this.inputShape], activation: 'relu',kernelInitialize:tf.initializers.heUniform()}));
+        this.targetModel.add(tf.layers.dense({ name:'Dense2', units:64, activation: 'relu',kernelInitialize:tf.initializers.heUniform()}));
+        this.targetModel.add(tf.layers.dense({ name:'Dense3', units: this.outputShape, activation: 'linear',kernelInitialize:tf.initializers.heUniform()}));
+        this.targetModel.compile({
+            loss: 'meanSquaredError',
+            optimizer: 'sgd',
+            metrics: ['accuracy']
+          });
+        this.targetModel.summary();
+        this.copyWeights();
     }
 
     infer(state)
     {
-        var output  = this.model.predict(tf.tensor1d(state).reshape([1,7])).arraySync().flat();
-        console.log('prediction:',output);
+        var output  = this.targetModel.predict(tf.tensor1d(state).reshape([1,this.inputShape])).arraySync().flat();
+        //console.log('prediction:',output);
         return output.indexOf(Math.max(...output));
     }
 
 
     pushToMemory(state,action,reward,nextState,done)
     {
+        if(this.replayMemory.length>=10000)
+        {
+            this.replayMemory = this.replayMemory.slice(1000,10000);
+        }
         this.replayMemory.push({'state':state,'action':action,'reward':reward,'nextState':nextState,'done':done})
     }
 
+    copyWeights()
+    {
+        this.targetModel.getLayer('Dense1').setWeights(this.qModel.getLayer('Dense1').getWeights());
+        this.targetModel.getLayer('Dense2').setWeights(this.qModel.getLayer('Dense2').getWeights());
+        this.targetModel.getLayer('Dense3').setWeights(this.qModel.getLayer('Dense3').getWeights());
+        this.targetModel.getWeights()[0].print();
+    }
 
     async train()
     {
+        if(this.replayMemory.length<this.batchSize)
+        {
+            return;
+        }
         console.log('train');
         var minibatch = this.replayMemory
         .map(value => ({ value, sort: Math.random() }))
@@ -45,31 +78,36 @@ class Agent
         var currentStates = minibatch.map(value=>{return value['state'];});
         var nextStates = minibatch.map(value=>{return value['nextState'];});
         
-        var currentDecisions = this.model.predict(tf.concat1d(currentStates).reshape([this.batchSize,7])).arraySync();
-        var nextDecisions = this.model.predict(tf.concat1d(nextStates).reshape([this.batchSize,7])).arraySync();
+        var currentDecisions = this.targetModel.predict(tf.concat1d(currentStates).reshape([this.batchSize,this.inputShape])).arraySync();
+        var nextDecisions = this.targetModel.predict(tf.concat1d(nextStates).reshape([this.batchSize,this.inputShape])).arraySync();
         let x =  new Array();
         let y =  new Array();
+        //console.log(currentDecisions);
         minibatch.forEach(
             (value, index) => {
                 const currentQ = currentDecisions[index];
-                currentQ[value['action']] = value['nextState'] ? value['reward'] + this.discountRate * Math.max(...nextDecisions[index]) : value['reward'];
+                //currentQ[value['action']] = value['reward'] + this.discountRate * Math.max(...nextDecisions[index]);
+                currentQ[value['action']] = value['reward'] + this.discountFactor * Math.max(...nextDecisions[index]);
                 x.push(value['state']);
                 y.push(currentQ);
             }
         );
-        
-        x = tf.concat1d(x).reshape([this.batchSize, 7]);
-        y = tf.concat1d(y).reshape([this.batchSize, 5]);
-        console.log(x.arraySync(),y.arraySync());
-        await this.model.fit(x,y, {
-            epochs: 5,
+        //console.log(currentDecisions,y);
+        x = tf.concat1d(x).reshape([this.batchSize, this.inputShape]);
+        y = tf.concat1d(y).reshape([this.batchSize, this.outputShape]);
+        //console.log(x.arraySync(),y.arraySync());
+        //console.log(y.arraySync());
+        await this.qModel.fit(x,y, {
+            epochs: 1,
+            verbose: 2,
             callbacks:{
               onEpochEnd: async(epoch, logs) =>{
                   console.log("Epoch:" + epoch + " Loss:" + logs.loss);
               }
             }
         });
-        this.model.getWeights()[0].print();
-
+        
+        x.dispose();
+        y.dispose();
     }
 }

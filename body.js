@@ -37,6 +37,7 @@ class Body
     setAngle(pitchAngle)
     {
         this.pitchAngle = pitchAngle;
+        this.pitchAngle = this.pitchAngle % 360;
         this.radianPitchAngle = pitchAngle * Math.PI / 180;
     }
 
